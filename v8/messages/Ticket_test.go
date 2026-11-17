@@ -164,3 +164,35 @@ func TestAuthorizationData_GetPACType_GOKRB5TestData(t *testing.T) {
 	assert.NotNil(t, pac.KDCChecksum, "PAC KDC Checksum info is nil")
 	assert.NotNil(t, pac.ServerChecksum, "PAC Server checksum info is nil")
 }
+
+func TestAuthorizationData_GetPACType_EmptyADIfRelevant(t *testing.T) {
+	t.Parallel()
+	// An AD-IF-RELEVANT element wrapping an empty authorization data sequence
+	// (ASN.1 SEQUENCE with zero elements) must not cause a panic when looking
+	// for a PAC. It simply is not a PAC.
+	a := types.AuthorizationData{
+		types.AuthorizationDataEntry{
+			ADType: adtype.ADIfRelevant,
+			ADData: []byte{0x30, 0x00},
+		},
+	}
+	tkt := Ticket{
+		Realm: "TEST.GOKRB5",
+		EncPart: types.EncryptedData{
+			EType: 18,
+			KVNO:  2,
+		},
+		DecryptedEncPart: EncTicketPart{
+			AuthorizationData: a,
+		},
+	}
+	b, _ := hex.DecodeString(testdata.KEYTAB_SYSHTTP_TEST_GOKRB5)
+	kt := keytab.New()
+	kt.Unmarshal(b)
+	sname := types.PrincipalName{NameType: nametype.KRB_NT_PRINCIPAL, NameString: []string{"sysHTTP"}}
+	w := bytes.NewBufferString("")
+	l := log.New(w, "", 0)
+	isPAC, _, err := tkt.GetPACType(kt, &sname, l)
+	assert.NoError(t, err, "getting PAC type from empty AD-IF-RELEVANT should not error")
+	assert.False(t, isPAC, "empty AD-IF-RELEVANT should not be identified as a PAC")
+}

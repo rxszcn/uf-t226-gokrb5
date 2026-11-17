@@ -66,6 +66,12 @@ func (pac *PACType) Unmarshal(b []byte) (err error) {
 	if err != nil {
 		return
 	}
+	// Each InfoBuffer header is 16 bytes (uint32 + uint32 + uint64) following the
+	// 8 byte PACTYPE header. Reject a buffer count that cannot fit in the data
+	// to avoid huge allocations from a malformed PAC.
+	if uint64(pac.CBuffers)*16 > uint64(len(b))-8 {
+		return fmt.Errorf("PAC CBuffers count %d exceeds the number of info buffer headers that fit in %d bytes of data", pac.CBuffers, len(b))
+	}
 	buf := make([]InfoBuffer, pac.CBuffers, pac.CBuffers)
 	for i := range buf {
 		buf[i].ULType, err = r.Uint32()
@@ -89,6 +95,13 @@ func (pac *PACType) Unmarshal(b []byte) (err error) {
 // https://msdn.microsoft.com/en-us/library/cc237954.aspx
 func (pac *PACType) ProcessPACInfoBuffers(key types.EncryptionKey, l *log.Logger) error {
 	for _, buf := range pac.Buffers {
+		// Validate the buffer's offset and size against the PAC data before
+		// slicing. A malformed PAC must fail here rather than panic or be
+		// processed with out of bounds data. The check is done in uint64 to
+		// avoid integer overflow of offset+size.
+		if buf.Offset > uint64(len(pac.Data)) || uint64(buf.CBBufferSize) > uint64(len(pac.Data))-buf.Offset {
+			return fmt.Errorf("PAC info buffer type %d declares offset %d and size %d which is out of bounds of the %d byte PAC data", buf.ULType, buf.Offset, buf.CBBufferSize, len(pac.Data))
+		}
 		p := make([]byte, buf.CBBufferSize, buf.CBBufferSize)
 		copy(p, pac.Data[int(buf.Offset):int(buf.Offset)+int(buf.CBBufferSize)])
 		switch buf.ULType {

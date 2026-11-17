@@ -223,6 +223,12 @@ func (t *Ticket) GetPACType(keytab *keytab.Keytab, sname *types.PrincipalName, l
 				l.Printf("PAC authorization data could not be unmarshaled: %v", err)
 				continue
 			}
+			if len(ad2) < 1 {
+				// An empty AD-IF-RELEVANT sequence contains no PAC. Skip it
+				// rather than indexing into an empty slice.
+				l.Printf("PAC authorization data is an empty sequence")
+				continue
+			}
 			if ad2[0].ADType == adtype.ADWin2KPAC {
 				isPAC = true
 				var p pac.PACType
